@@ -39,14 +39,17 @@ puzzler.start = function(){
 	this.time = 0;
 	this.started = false;
 	this.showHelp = false;
+	this.showHistory = false;
 	this.showLoadImage = false;
 	this.porder = [];
 	this.xymap = [];
 	this.pieces = [];
+	this.games = {};
 	this.director = new lime.Director(document.body, this.WIDTH, this.HEIGHT),
 		scene = new lime.Scene(),
 		this.imgScene = new lime.Scene(),
 		this.optScene = new lime.Scene(),
+		this.historyScene = new lime.Scene(),
 
 		layer = new lime.Layer().setSize(this.IMGWIDTH, this.IMGHEIGHT).setPosition(this.IMGWIDTH/2+5, this.IMGHEIGHT/2+5),
 		sideLayer = new lime.Layer().setSize(this.SIDEWIDTH,this.IMGHEIGHT).setPosition(this.WIDTH-this.SIDEWIDTH/2, this.IMGHEIGHT/2+5),
@@ -55,20 +58,22 @@ puzzler.start = function(){
 			.setPosition(662,300).setFontColor('#000').setFill('#F2F4C6');
 
 	var butY = -this.HEIGHT/2+100;
-	this.startButton = new lime.GlossyButton('Start').setColor('#D1EFEC').setSize(140,40).setPosition(0,butY);
-	this.levelButton = new lime.GlossyButton('Level').setColor('#D1EFEC').setSize(140,40).setPosition(0,butY+80);
-	this.loadButton = new lime.GlossyButton('Other image').setColor('#D1EFEC').setSize(140,40).setPosition(0,butY+160);
-	var helpButton = new lime.GlossyButton('Help').setColor('#D1EFEC').setSize(140,40).setPosition(0,butY+240);
+	this.startButton	= new lime.GlossyButton('Start').setColor('#D1EFEC').setSize(140,40).setPosition(0,butY);
+	this.levelButton	= new lime.GlossyButton('Level').setColor('#D1EFEC').setSize(140,40).setPosition(0,butY+80);
+	this.loadButton		= new lime.GlossyButton('Other image').setColor('#D1EFEC').setSize(140,40).setPosition(0,butY+160);
+	this.historyButton	= new lime.GlossyButton('History').setColor('#D1EFEC').setSize(140,40).setPosition(0,butY+240);
+	var helpButton		= new lime.GlossyButton('Help').setColor('#D1EFEC').setSize(140,40).setPosition(0,butY+320);
 
-	this.movesLbl = new lime.Label().setFontSize(26).setSize(this.SIDEWIDTH-10,120).setPosition(0,100).setText('Moves:');
-	this.matchLbl = new lime.Label().setFontSize(26).setSize(this.SIDEWIDTH-10,120).setPosition(0,250).setText('Matched:');
-	this.timeLbl = new lime.Label().setFontSize(26).setSize(this.SIDEWIDTH-10,120).setPosition(0,400).setText('Time:');
+	this.movesLbl	= new lime.Label().setFontSize(26).setSize(this.SIDEWIDTH-10,120).setPosition(0,100).setText('Moves:');
+	this.matchLbl	= new lime.Label().setFontSize(26).setSize(this.SIDEWIDTH-10,120).setPosition(0,250).setText('Matched:');
+	this.timeLbl	= new lime.Label().setFontSize(26).setSize(this.SIDEWIDTH-10,120).setPosition(0,400).setText('Time:');
 
 	var backRect = new lime.Sprite().setSize(this.WIDTH, this.HEIGHT).setPosition(this.WIDTH/2, this.HEIGHT/2).setFill('#B1BAC8');
 
 	sideLayer.appendChild(this.startButton);
 	sideLayer.appendChild(this.levelButton);
 	sideLayer.appendChild(this.loadButton);
+	sideLayer.appendChild(this.historyButton);
 	sideLayer.appendChild(helpButton);
 	sideLayer.appendChild(this.movesLbl);
 	sideLayer.appendChild(this.matchLbl);
@@ -77,7 +82,16 @@ puzzler.start = function(){
 	this.imgScene.appendChild(this.imgSprite);
 
 	var ok = new lime.GlossyButton('OK').setColor('#D1EFEC').setSize(240,80).setPosition(this.IMGWIDTH/2+100,this.IMGHEIGHT-200);
+	var hOk = new lime.GlossyButton('OK').setColor('#6F9CB3').setSize(240,80).setPosition(this.IMGWIDTH/2,this.IMGHEIGHT-100);
+	var reset = new lime.GlossyButton('Reset history').setColor('#6F9CB3').setSize(240,80).setPosition(this.IMGWIDTH/2+280,this.IMGHEIGHT-100);
+	div = document.createElement('div');
+	div.setAttribute('id', 'history');
+	this.historyScene.appendChild(div);
+	this.historyScene.appendChild(hOk);
+	if (storageSupprt)
+		this.historyScene.appendChild(reset);
 	this.imgScene.appendChild(ok);
+	this.historyDiv = div;
 
 	scene.appendChild(backRect);
 	scene.appendChild(layer);
@@ -85,8 +99,12 @@ puzzler.start = function(){
 	scene.appendChild(loadLbl);
 
 	goog.events.listen(this.startButton, lime.Button.Event.CLICK, this.startGame.bind(this));
+	goog.events.listen(this.historyButton, lime.Button.Event.CLICK, this.history.bind(this));
 	goog.events.listen(helpButton, lime.Button.Event.CLICK, this.help.bind(this));
 	goog.events.listen(ok, lime.Button.Event.CLICK, this.helpOk.bind(this));
+	goog.events.listen(hOk, lime.Button.Event.CLICK, this.historyOk.bind(this));
+	if (storageSupprt)
+		goog.events.listen(reset, lime.Button.Event.CLICK, this.resetHistory.bind(this));
 
 	this.layer = layer;
 	this.sideLayer = sideLayer;
@@ -120,6 +138,11 @@ puzzler.start = function(){
 	goog.events.listen(window,'keydown',function(e){
 		if (puzzler.showHelp) {
 			puzzler.showHelp = false;
+			puzzler.director.replaceScene(puzzler.scene);
+		}
+
+		if (puzzler.showHistory) {
+			puzzler.showHistory = false;
 			puzzler.director.replaceScene(puzzler.scene);
 		}
 
@@ -167,6 +190,7 @@ puzzler.start = function(){
 				puzzler.matchLbl.setText('Matched: '+ m +'/'+puzzler.level);
 
 				if (m == puzzler.level) {
+					puzzler.buildScore();
 					puzzler.endGame();
 					alert("Congratulations, puzzle solved\n"+ puzzler.timeLbl.getText() +"\n"+puzzler.movesLbl.getText());
 				}
@@ -179,7 +203,13 @@ puzzler.start = function(){
 
 	// set current scene active
 	this.director.replaceScene(scene);
-
+	
+	if (storageSupprt) {
+		var s  = localStorage.getItem('games');
+		this.games = JSON.parse(s);
+	}
+	if (!this.games)
+		this.games = [];
 };
 
 puzzler.doMenu = function() {
@@ -221,7 +251,7 @@ puzzler.doMenu = function() {
 		puzzler.menu.setPosition(xEvent,yEvent);
 	});
 
-	goog.events.listen(this.menu, ['mousedown','touchstart'], function(e) {
+	goog.events.listen(this.menu, ['action'], function(e) {
 		var doaction = true;
 		if (puzzler.started)
 			doaction = confirm('End game and change level?');
@@ -341,7 +371,7 @@ puzzler.movePiece = function(from, to) {
 };
 
 puzzler.findMove = function(position, xLayer, yLayer) {
-	var ret = -1, emptyPos, pos;
+	var emptyPos, pos;
 	// find empty index
 	for (var i = 0;i < this.porder.length;i++)
 		if (this.porder[i] == 0)
@@ -354,7 +384,22 @@ puzzler.findMove = function(position, xLayer, yLayer) {
 	if ( (Math.abs(emptyPos.x - pos.x) == xLayer && emptyPos.y == pos.y) ||
 			(Math.abs(emptyPos.y - pos.y) == yLayer && emptyPos.x == pos.x))
 		return i;
-	return ret;
+	return -1;
+};
+
+puzzler.buildScore = function() {
+	var item = [], dt = new Date();
+	item.push(this.time);
+	item.push(this.moves);
+	item.push(this.map.indexOf(this.level)+1);
+	item.push(Math.floor(dt.getTime()/1000));
+	this.games.push(item);
+	this.games.sort(sortByTime);
+
+	if (this.games.length > 10)
+		this.game.splice(10, this.game.length - 10);
+	if (storageSupprt)
+		localStorage.setItem('games', JSON.stringify(this.games));
 };
 
 puzzler.endGame = function() {
@@ -391,12 +436,42 @@ puzzler.startGame = function() {
 
 puzzler.timer = function() {
 	this.time++;
-	var mins = 0, secs = this.time, s = 'Time: ';
-	if (this.time > 59) {
-		mins = Math.floor(this.time / 60);
-		secs = this.time % 60;
+	var s = 'Time: ';
+	this.timeLbl.setText(s+getTimeString(this.time));
+};
+
+puzzler.history = function() {
+	this.showHistory = true;
+	var html = '<table cellpadding="0" cellspacing="0" width="100%">';
+	html += '<thead><tr><th>time</th><th>moves</th><th>level</th><th>date</th></thead>';
+	html += '<tbody>';
+
+	for (var i = 0;i < this.games.length;i++) {
+		r = this.games[i];
+		dt = new Date(r[3]*1000);
+
+		html += '<tr>';
+		html += '<td>'+ getTimeString(r[0]) +'</td>';
+		html += '<td>'+ r[1] +'</td>';
+		html += '<td>'+ r[2] +'</td>';
+		html += '<td>'+ dt.toLocaleDateString()+' '+dt.toLocaleTimeString() +'</td>';
+		html += '</tr>';
 	}
-	this.timeLbl.setText(s+(mins ? (mins < 10 ? '0':'') + mins+':': '00:')+(secs<10 ? '0':'')+secs);
+
+	html += '</tbody>';
+	html += '</table>';
+	this.historyDiv.innerHTML = html;
+	this.director.replaceScene(this.historyScene);
+};
+
+puzzler.resetHistory = function() {
+	localStorage.removeItem('games');
+	this.games = [];
+};
+
+puzzler.historyOk = function() {
+	this.showHistory = false;
+	this.director.replaceScene(this.scene);
 };
 
 puzzler.help = function() {
@@ -517,3 +592,24 @@ Function.prototype.bind = function (bind) {
 };
 
 
+function supports_html5_storage() {
+	try {
+		return 'localStorage' in window && window['localStorage'] !== null;
+	} catch (e) {
+		return false;
+	}
+}
+
+var storageSupprt = supports_html5_storage();
+function sortByTime(a,b) {
+	return a[0] - b[0];
+}
+
+function getTimeString(time) {
+	var mins = 0, secs = time;
+	if (time > 59) {
+		mins = Math.floor(time / 60);
+		secs = time % 60;
+	}
+	return (mins ? (mins < 10 ? '0':'') + mins+':': '00:')+(secs<10 ? '0':'')+secs;
+}
